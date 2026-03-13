@@ -145,14 +145,21 @@ async function runReconciliationPass(ctx: RunnerContext): Promise<void> {
     const pos = ctx.positions.get(sym);
     if (!pos || pos.state !== "open" || !pos.clientOrderIdOpen) continue;
     const localOrder = await ctx.broker.getOrder(sym, pos.clientOrderIdOpen);
-    const rec = await reconcileOrderVsBroker({
-      symbol: sym,
-      clientOrderId: pos.clientOrderIdOpen,
-      localExecutedQty: localOrder?.executedQty ?? String(pos.qty),
-      broker: ctx.broker,
-      log: ctx.log,
-    });
-    if (!rec.ok) ctx.log.warn({ symbol: sym, mismatches: rec.mismatches }, "reconcile order");
+    if (!localOrder) {
+      ctx.log.warn(
+        { symbol: sym, clientOrderId: pos.clientOrderIdOpen },
+        "reconcile: broker has no order (restart seed missing?) — skip broker compare"
+      );
+    } else {
+      const rec = await reconcileOrderVsBroker({
+        symbol: sym,
+        clientOrderId: pos.clientOrderIdOpen,
+        localExecutedQty: localOrder.executedQty,
+        broker: ctx.broker,
+        log: ctx.log,
+      });
+      if (!rec.ok) ctx.log.warn({ symbol: sym, mismatches: rec.mismatches }, "reconcile order");
+    }
 
     if (ctx.fillsRepo) {
       const net = await ctx.fillsRepo.netFilledQty(uid, sym);

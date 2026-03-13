@@ -65,12 +65,7 @@ export async function persistPaperPlaceOrder(
       source: "paper",
     });
   } else {
-    await p.positions.upsert(userId, sym, {
-      userId,
-      symbol: sym,
-      quantity: "0",
-      source: "paper",
-    });
+    await p.positions.closePaperPosition(userId, sym);
   }
 
   await p.logs.append({

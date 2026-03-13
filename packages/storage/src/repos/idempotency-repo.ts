@@ -32,10 +32,16 @@ export class IdempotencyRepository {
   }
 
   async complete(key: string): Promise<void> {
-    await this.docRef(key).update({ outcome: "completed" });
+    await this.docRef(key).set(
+      { outcome: "completed", key, updatedAt: FieldValue.serverTimestamp() } as Record<string, unknown>,
+      { merge: true }
+    );
   }
 
   async fail(key: string): Promise<void> {
-    await this.docRef(key).update({ outcome: "failed" });
+    await this.docRef(key).set(
+      { outcome: "failed", key, updatedAt: FieldValue.serverTimestamp() } as Record<string, unknown>,
+      { merge: true }
+    );
   }
 }

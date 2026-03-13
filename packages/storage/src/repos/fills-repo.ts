@@ -6,9 +6,10 @@ import type { FillDoc } from "../models.js";
 export class FillsRepository {
   constructor(private readonly db: Firestore) {}
 
-  /** doc id: userId_exchangeOrderId_tradeId */
+  /** doc id: без '/' (Firestore); стабильный id для paper (exchangeOrderId+tradeId уникальны в рамках user). */
   docId(userId: string, exchangeOrderId: number, tradeId: number): string {
-    return `${userId}_${String(exchangeOrderId)}_${String(tradeId)}`;
+    const safeUser = userId.replace(/\//g, "_").slice(0, 80);
+    return `${safeUser}_${String(exchangeOrderId)}_${String(tradeId)}`;
   }
 
   docRef(id: string) {

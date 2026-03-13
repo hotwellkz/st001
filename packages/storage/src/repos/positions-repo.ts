@@ -7,12 +7,28 @@ export class PositionsRepository {
   constructor(private readonly db: Firestore) {}
 
   docRef(userId: string, symbol: string) {
-    return this.db.collection(COLLECTIONS.positions).doc(`${userId}_${symbol}`);
+    const id = `${userId.replace(/\//g, "_")}_${symbol}`;
+    return this.db.collection(COLLECTIONS.positions).doc(id);
   }
 
   async upsert(userId: string, symbol: string, data: Partial<PositionDoc>): Promise<void> {
     await this.docRef(userId, symbol).set(
       { ...data, updatedAt: FieldValue.serverTimestamp() } as Record<string, unknown>,
+      { merge: true }
+    );
+  }
+
+  /** Закрыть paper-позицию и убрать clientOrderIdOpen (после SELL). */
+  async closePaperPosition(userId: string, symbol: string): Promise<void> {
+    await this.docRef(userId, symbol).set(
+      {
+        userId,
+        symbol,
+        quantity: "0",
+        source: "paper",
+        clientOrderIdOpen: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      } as Record<string, unknown>,
       { merge: true }
     );
   }

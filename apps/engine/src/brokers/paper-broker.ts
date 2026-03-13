@@ -36,8 +36,9 @@ export class PaperBroker implements Broker {
       executedQty: req.quantity,
       origQty: req.quantity,
     };
-    this.orders.set(req.clientOrderId, r);
+    /* Persist до записи в память: при ошибке Firestore пайплайн откатится, нет «тихого» рассинхрона. */
     if (this.onPersist) await this.onPersist(req, r, px);
+    this.orders.set(req.clientOrderId, r);
     return r;
   }
 

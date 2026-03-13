@@ -37,9 +37,10 @@ async function bootstrap(): Promise<{
   storeEmergencyHalt: boolean;
   fillsRepo: FillsRepository | undefined;
   renewLeader: (() => Promise<void>) | undefined;
+  leaderAcquired: boolean;
+  engineState: EngineStateRepository | undefined;
 }> {
   const positions = new PositionManager();
-  const storeEmergencyHalt = false;
 
   if (env.ENGINE_PERSISTENCE !== "firestore") {
     const barStore = new MemoryBarProcessedStore();
@@ -55,9 +56,11 @@ async function bootstrap(): Promise<{
         return true;
       },
       idempotencyComplete: async () => {},
-      storeEmergencyHalt,
+      storeEmergencyHalt: false,
       fillsRepo: undefined,
       renewLeader: undefined,
+      leaderAcquired: true,
+      engineState: undefined,
     };
   }
 
@@ -72,7 +75,10 @@ async function bootstrap(): Promise<{
   const holderId = `${instanceId}-${String(process.pid)}`;
   const acquired = await engineState.tryAcquireLeader(instanceId, holderId, env.ENGINE_LEADER_LEASE_MS);
   if (!acquired) {
-    log.warn({ instanceId }, "leader lease held by another process — running read-only cycle once then exit optional");
+    log.warn(
+      { instanceId },
+      "leader lease held — engine idle (no bar/idempotency/order writes); поднимите один инстанс или дождитесь истечения lease"
+    );
   }
 
   const renewLeader = async () => {
@@ -134,6 +140,8 @@ async function bootstrap(): Promise<{
     storeEmergencyHalt: storeEmergencyHaltFirestore,
     fillsRepo,
     renewLeader: acquired ? renewLeader : undefined,
+    leaderAcquired: acquired,
+    engineState,
   };
 }
 
@@ -160,6 +168,14 @@ async function mainAsync(): Promise<void> {
       : null;
 
   async function tick(): Promise<void> {
+    if (env.ENGINE_PERSISTENCE === "firestore" && !ctx.leaderAcquired) return;
+    if (ctx.engineState) {
+      const doc = await ctx.engineState.get(instanceId);
+      if (doc?.emergencyHalt === true) {
+        log.warn("emergency halt: engineState");
+        return;
+      }
+    }
     await runEngineCycle({
       env,
       log,
@@ -170,7 +186,7 @@ async function mainAsync(): Promise<void> {
       idempotencyTryReserve: ctx.idempotencyTryReserve,
       idempotencyComplete: ctx.idempotencyComplete,
       telegram: tg,
-      storeEmergencyHalt: ctx.storeEmergencyHalt,
+      storeEmergencyHalt: false,
       equityQuote: Number(process.env["PAPER_EQUITY"] ?? "100000"),
       tickSize: 0.01,
       stepSize: 0.00001,
