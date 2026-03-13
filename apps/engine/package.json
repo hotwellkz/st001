@@ -1,0 +1,26 @@
+{
+  "name": "@app/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node --import tsx src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pkg/binance": "workspace:*",
+    "@pkg/config": "workspace:*",
+    "@pkg/logger": "workspace:*",
+    "@pkg/notifications": "workspace:*",
+    "@pkg/shared": "workspace:*",
+    "@pkg/storage": "workspace:*",
+    "@pkg/strategy": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

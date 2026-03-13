@@ -1,0 +1,60 @@
+# Phase 7 — CI: lint, typecheck, unit/integration tests. No secrets; no live trading.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Lint
+        run: pnpm exec eslint packages apps --ext .ts
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Build packages & apps
+        run: |
+          pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config \
+            --filter @pkg/binance --filter @pkg/storage --filter @pkg/notifications \
+            --filter @pkg/risk --filter @pkg/strategy run build
+          pnpm --filter @app/api --filter @app/engine --filter @app/backtester run build
+
+      - name: Unit & integration tests
+        run: |
+          pnpm --filter @pkg/binance test
+          pnpm --filter @pkg/storage test
+          pnpm --filter @pkg/strategy test
+          pnpm --filter @pkg/testing test
+          pnpm --filter @app/engine test
+          pnpm --filter @app/backtester test
+
+      # Web build needs VITE_* — optional in CI (use placeholders)
+      - name: Web build (placeholder env)
+        env:
+          VITE_FIREBASE_API_KEY: ci-placeholder
+          VITE_FIREBASE_AUTH_DOMAIN: localhost
+          VITE_FIREBASE_PROJECT_ID: ci
+        run: pnpm --filter @app/web run build

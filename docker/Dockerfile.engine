@@ -1,0 +1,22 @@
+# Engine image: build workspace deps, run compiled @app/engine.
+FROM node:20-bookworm-slim AS builder
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /app
+COPY pnpm-workspace.yaml package.json ./
+COPY packages ./packages
+COPY apps/engine ./apps/engine
+COPY tsconfig.base.json ./
+RUN pnpm install
+RUN pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config run build
+RUN pnpm --filter @app/engine run build
+
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/engine ./apps/engine
+USER node
+WORKDIR /app
+CMD ["node", "apps/engine/dist/main.js"]

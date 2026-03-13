@@ -1,0 +1,48 @@
+services:
+  api:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config run build && pnpm --filter @app/api exec tsx src/main.ts"
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+      API_PORT: "3000"
+      API_HOST: "0.0.0.0"
+    volumes:
+      - .:/app
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.engine
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      ENGINE_INSTANCE_ID: docker-1
+    # Phase 1: long-running bootstrap; no ports
+
+  backtester:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config run build && pnpm --filter @app/backtester exec tsx src/main.ts"
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+    volumes:
+      - .:/app
+    profiles:
+      - tools

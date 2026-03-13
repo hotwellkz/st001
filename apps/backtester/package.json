@@ -1,0 +1,24 @@
+{
+  "name": "@app/backtester",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node --import tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "backtest": "node --import tsx src/cli.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pkg/config": "workspace:*",
+    "@pkg/logger": "workspace:*",
+    "@pkg/shared": "workspace:*",
+    "@pkg/strategy": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

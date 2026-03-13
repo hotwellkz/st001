@@ -1,0 +1,21 @@
+{
+  "name": "@app/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "node --import tsx src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@pkg/config": "workspace:*",
+    "@pkg/logger": "workspace:*",
+    "@pkg/shared": "workspace:*",
+    "fastify": "^5.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
