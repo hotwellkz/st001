@@ -51,7 +51,8 @@ export function computeMetrics(
     if (dd > maxDd) maxDd = dd;
   }
 
-  const lastEq = equityCurve.length ? equityCurve[equityCurve.length - 1]!.equity : initialEquity;
+  const lastPt = equityCurve.length ? equityCurve[equityCurve.length - 1] : undefined;
+  const lastEq = lastPt !== undefined ? lastPt.equity : initialEquity;
   const totalReturnFrac = initialEquity > 0 ? lastEq / initialEquity - 1 : 0;
   const t0 = equityCurve[0]?.closeTime ?? 0;
   const t1 = equityCurve[equityCurve.length - 1]?.closeTime ?? t0;
@@ -64,7 +65,7 @@ export function computeMetrics(
   const byMonth = new Map<string, { pnl: number; trades: number }>();
   for (const t of sells) {
     const d = new Date(t.barIndexFill);
-    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const key = `${String(d.getUTCFullYear())}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     const cur = byMonth.get(key) ?? { pnl: 0, trades: 0 };
     cur.pnl += t.pnlQuote ?? 0;
     cur.trades += 1;

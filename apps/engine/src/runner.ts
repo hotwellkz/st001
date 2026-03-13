@@ -1,11 +1,11 @@
 /**
- * Engine runner: universe → klines → только последний закрытый бар → pipeline.
- * Рестарт: barStore восстанавливает lastBarCloseTime из Firestore (или memory для тестов).
+ * Engine runner: universe → klines (Binance public) → последний закрытый бар → pipeline.
+ * Reconciliation в конце цикла по открытым позициям и ордерам в брокере.
  */
 
 import type { Logger } from "@pkg/logger";
 import type { EngineEnv } from "@pkg/config";
-import { BinanceRestClient } from "@pkg/binance";
+import { BinanceRestClient, binanceRestForMarketData } from "@pkg/binance";
 import { requireBinanceCredentials } from "@pkg/config";
 import { klineRowToCandle } from "./klines-to-candles.js";
 import { processSymbolClosedBar } from "./pipeline/closed-candle-pipeline.js";
@@ -18,6 +18,8 @@ import { resolveHalt, envEmergencyHalt } from "./kill-switch.js";
 import { alertTelegram } from "./telegram-alerts.js";
 import type { TelegramNotifier } from "@pkg/notifications";
 import { defaultStrategyMvpConfig, minBarsRequired } from "@pkg/strategy";
+import { reconcileOrderVsBroker, reconcilePositionVsFills } from "./reconciliation.js";
+import type { FillsRepository } from "@pkg/storage";
 
 export interface RunnerContext {
   env: EngineEnv;
@@ -36,6 +38,22 @@ export interface RunnerContext {
   minQty: number;
   maxQty: number;
   minNotional: number;
+  /** Для сверки позиции с суммой BUY fills по символу (paper). */
+  fillsRepo?: FillsRepository;
+  userId?: string;
+}
+
+function createKlinesClient(env: EngineEnv): BinanceRestClient {
+  try {
+    const cred = requireBinanceCredentials(env);
+    return new BinanceRestClient({
+      baseUrl: cred.baseUrl,
+      apiKey: cred.apiKey,
+      apiSecret: cred.apiSecret,
+    });
+  } catch {
+    return binanceRestForMarketData(env.BINANCE_BASE_URL);
+  }
 }
 
 export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
@@ -47,17 +65,8 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
   if (halt) return;
 
   const symbols = await ctx.universe.refresh();
-  let rest: BinanceRestClient | null = null;
-  try {
-    const cred = requireBinanceCredentials(ctx.env);
-    rest = new BinanceRestClient({
-      baseUrl: cred.baseUrl,
-      apiKey: cred.apiKey,
-      apiSecret: cred.apiSecret,
-    });
-  } catch {
-    ctx.log.warn("no Binance creds: skip klines fetch (paper offline test)");
-  }
+  const rest = createKlinesClient(ctx.env);
+  ctx.log.debug("klines client ready (public or signed)");
 
   const cfg = defaultStrategyMvpConfig();
   const deps: PipelineDeps = {
@@ -96,7 +105,6 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
 
   for (const symbol of symbols) {
     try {
-      if (!rest) continue;
       const rows = await rest.getKlines(symbol, "4h", { limit: 250 });
       if (rows.length < minBarsRequired(cfg)) continue;
       const now = Date.now();
@@ -125,6 +133,36 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
         "error",
         String(e instanceof Error ? e.message : e)
       );
+    }
+  }
+
+  await runReconciliationPass(ctx);
+}
+
+async function runReconciliationPass(ctx: RunnerContext): Promise<void> {
+  const uid = ctx.userId ?? ctx.env.ENGINE_USER_ID;
+  for (const sym of await ctx.universe.refresh()) {
+    const pos = ctx.positions.get(sym);
+    if (!pos || pos.state !== "open" || !pos.clientOrderIdOpen) continue;
+    const localOrder = await ctx.broker.getOrder(sym, pos.clientOrderIdOpen);
+    const rec = await reconcileOrderVsBroker({
+      symbol: sym,
+      clientOrderId: pos.clientOrderIdOpen,
+      localExecutedQty: localOrder?.executedQty ?? String(pos.qty),
+      broker: ctx.broker,
+      log: ctx.log,
+    });
+    if (!rec.ok) ctx.log.warn({ symbol: sym, mismatches: rec.mismatches }, "reconcile order");
+
+    if (ctx.fillsRepo) {
+      const net = await ctx.fillsRepo.netFilledQty(uid, sym);
+      const posRec = reconcilePositionVsFills({
+        symbol: sym,
+        positionQty: pos.qty,
+        fillsQtySum: net,
+        log: ctx.log,
+      });
+      if (!posRec.ok) ctx.log.warn({ symbol: sym, mismatches: posRec.mismatches }, "reconcile position");
     }
   }
 }

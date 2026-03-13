@@ -16,7 +16,9 @@ export function metricsToJson(metrics: BacktestMetrics, result: BacktestResult):
         monthly: metrics.monthly,
       },
       trades: result.trades,
-      equitySample: metrics.equityCurve.filter((_, i) => i % Math.max(1, Math.floor(metrics.equityCurve.length / 500)) === 0),
+      equitySample: metrics.equityCurve.filter(
+        (_, i) => i % Math.max(1, Math.floor(metrics.equityCurve.length / 500)) === 0
+      ),
     },
     null,
     2
@@ -24,24 +26,27 @@ export function metricsToJson(metrics: BacktestMetrics, result: BacktestResult):
 }
 
 export function metricsToCsv(metrics: BacktestMetrics): string {
+  const cagr = metrics.cagrFrac !== null ? String(metrics.cagrFrac * 100) : "";
   const lines = [
     "metric,value",
-    `total_return_pct,${metrics.totalReturnFrac * 100}`,
-    `cagr_pct,${metrics.cagrFrac !== null ? metrics.cagrFrac * 100 : ""}`,
-    `max_drawdown_pct,${metrics.maxDrawdownFrac * 100}`,
-    `win_rate,${metrics.winRate}`,
-    `profit_factor,${metrics.profitFactor}`,
-    `avg_r,${metrics.avgRMultiple}`,
-    `num_trades,${metrics.numTrades}`,
-    `round_trips,${metrics.numRoundTrips}`,
+    `total_return_pct,${String(metrics.totalReturnFrac * 100)}`,
+    `cagr_pct,${cagr}`,
+    `max_drawdown_pct,${String(metrics.maxDrawdownFrac * 100)}`,
+    `win_rate,${String(metrics.winRate)}`,
+    `profit_factor,${String(metrics.profitFactor)}`,
+    `avg_r,${String(metrics.avgRMultiple)}`,
+    `num_trades,${String(metrics.numTrades)}`,
+    `round_trips,${String(metrics.numRoundTrips)}`,
   ];
   lines.push("", "month,pnl,trades");
   for (const m of metrics.monthly) {
-    lines.push(`${m.month},${m.pnl},${m.trades}`);
+    lines.push(`${m.month},${String(m.pnl)},${String(m.trades)}`);
   }
   return lines.join("\n");
 }
 
 export function equityCurveCsv(curve: { closeTime: number; equity: number }[]): string {
-  return ["closeTime,equity", ...curve.map((p) => `${p.closeTime},${p.equity}`)].join("\n");
+  return ["closeTime,equity", ...curve.map((p) => `${String(p.closeTime)},${String(p.equity)}`)].join(
+    "\n"
+  );
 }

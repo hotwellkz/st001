@@ -13,7 +13,7 @@ import {
   type StrategyMvpConfig,
 } from "@pkg/strategy";
 import type { SimulationConfig } from "../sim-config.js";
-import { PortfolioSimulator, type Position } from "./portfolio.js";
+import { PortfolioSimulator } from "./portfolio.js";
 import { entryFillPrice, exitFillPrice, qtyFromRisk } from "./execution.js";
 
 export interface TradeRecord {
@@ -67,7 +67,7 @@ export function runAlignedBacktest(params: {
     for (const sym of params.symbols) {
       const series = params.bars[sym];
       if (!series || series.length !== n) continue;
-      const candles = series.slice(0, i + 1) as Candle[];
+      const candles: Candle[] = Array.from(series.slice(0, i + 1));
       const next = series[i + 1];
       if (!next) continue;
 
@@ -111,7 +111,8 @@ export function runAlignedBacktest(params: {
       const ev = entry.events[0];
       if (!ev || ev.type !== "signal_detected") continue;
       const stopPrice = ev.stopPrice;
-      const atr = (candles[i]!.close - stopPrice) / cfg.atrStopMult;
+      const barI = candles[i];
+      const atr = barI ? (barI.close - stopPrice) / cfg.atrStopMult : 0;
       const eq = portfolio.equity(marks);
       const heatOk = canOpenNewPosition(portfolio.openPositionsRisk(), cfg);
       if (!heatOk.ok) continue;

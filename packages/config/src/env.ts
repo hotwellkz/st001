@@ -31,6 +31,11 @@ const engineEnvSchema = baseEnvSchema.extend({
     .transform((v) => v === "true" || v === "1"),
   ENGINE_POLL_INTERVAL_MS: z.coerce.number().default(60_000),
   ENGINE_USER_ID: z.string().default("system"),
+  /** memory | firestore — paper E2E: firestore + GOOGLE_APPLICATION_CREDENTIALS */
+  ENGINE_PERSISTENCE: z.enum(["memory", "firestore"]).default("memory"),
+  ENGINE_LEADER_LEASE_MS: z.coerce.number().min(10_000).default(120_000),
+  /** Интервал продления лидер-лиза (должен быть < ENGINE_LEADER_LEASE_MS) */
+  ENGINE_LEADER_RENEW_MS: z.coerce.number().min(5_000).default(60_000),
 });
 
 export type BaseEnv = z.infer<typeof baseEnvSchema>;

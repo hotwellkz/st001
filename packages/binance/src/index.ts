@@ -11,6 +11,10 @@ export {
   type ParsedSymbolFilters,
 } from "./filters.js";
 export { withRetry, fetchWithRetry, type RetryOptions } from "./retry.js";
-export { BinanceRestClient, type BinanceRestClientConfig } from "./rest-client.js";
+export {
+  BinanceRestClient,
+  binanceRestForMarketData,
+  type BinanceRestClientConfig,
+} from "./rest-client.js";
 export { BinanceMarketStream, klineStreamPath, type KlineHandler } from "./ws-market.js";
 export { BinanceUserDataStream, type UserStreamEventHandler } from "./ws-user-data.js";

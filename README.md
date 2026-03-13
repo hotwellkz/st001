@@ -17,9 +17,9 @@ pnpm install
 ## Сборка
 
 ```bash
-pnpm exec pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config run build
-pnpm exec pnpm --filter @app/api --filter @app/engine --filter @app/backtester run build
-# или по мере добавления пакетов: pnpm -r run build
+pnpm build
+# Web (нужны VITE_FIREBASE_*):
+# VITE_FIREBASE_API_KEY=x VITE_FIREBASE_AUTH_DOMAIN=x VITE_FIREBASE_PROJECT_ID=x pnpm build:web
 ```
 
 ## Локальный запуск
@@ -35,6 +35,30 @@ pnpm dev:backtester
 # Статическая оболочка web (без бизнес-логики)
 pnpm --filter @app/web dev
 ```
+
+### Engine — paper mode (E2E с Firestore)
+
+1. Скопируйте `.env.example` → `.env`.
+2. **Только память (klines с Binance, без записи в БД):**  
+   `ENGINE_PERSISTENCE=memory` (по умолчанию). Ключи Binance не нужны для свечей.
+3. **Paper + Firestore (рекомендуется для многодневного прогона):**
+   - Сервисный аккаунт Firebase/GCP, JSON ключ.
+   - В `.env`:  
+     `GOOGLE_APPLICATION_CREDENTIALS=/abs/path/to/service-account.json`  
+     `ENGINE_PERSISTENCE=firestore`  
+     `ENGINE_INSTANCE_ID=local-1`  
+     `GCP_PROJECT_ID=<id проекта>` (опционально, для логов)
+   - В Firestore создаются коллекции: `engineState`, `idempotencyKeys`, `orders`, `fills`, `positions`, `logs`.
+4. Запуск:
+
+```bash
+pnpm --filter @pkg/config build && pnpm --filter @pkg/binance build && pnpm --filter @pkg/storage build && pnpm --filter @app/engine build
+ENGINE_PERSISTENCE=memory pnpm dev:engine
+# или с Firestore:
+# ENGINE_PERSISTENCE=firestore GOOGLE_APPLICATION_CREDENTIALS=... ENGINE_INSTANCE_ID=local-1 pnpm dev:engine
+```
+
+По умолчанию: `ENGINE_TRADING_MODE=paper`, `LIVE_TRADING_ENABLED=false` — live не включать без чеклиста.
 
 ## Тесты
 

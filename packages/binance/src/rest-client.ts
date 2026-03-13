@@ -17,6 +17,18 @@ export interface BinanceRestClientConfig {
   recvWindow?: number;
 }
 
+/**
+ * Только публичные эндпоинты (klines, exchangeInfo). Ключи не используются для подписи.
+ * Paper mode: рыночные данные без обязательных BINANCE_API_SECRET.
+ */
+export function binanceRestForMarketData(baseUrl: string): BinanceRestClient {
+  return new BinanceRestClient({
+    baseUrl,
+    apiKey: "__market_data_only__",
+    apiSecret: "__unused__",
+  });
+}
+
 export class BinanceRestClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;

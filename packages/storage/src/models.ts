@@ -81,6 +81,8 @@ export interface PositionDoc {
   symbol: string;
   quantity: string;
   avgEntryPrice?: string;
+  /** Последний открывающий ордер (paper recovery + reconcile). */
+  clientOrderIdOpen?: string;
   updatedAt: Timestamp;
   source: "reconciled" | "paper";
 }

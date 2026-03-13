@@ -7,7 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config --filter @pkg/binance --filter @pkg/storage --filter @pkg/notifications --filter @pkg/risk --filter @pkg/strategy run build && pnpm --filter @app/api --filter @app/engine --filter @app/backtester run build",
+    "build:web": "pnpm --filter @app/web run build",
     "dev:api": "pnpm --filter @app/api dev",
     "dev:engine": "pnpm --filter @app/engine dev",
     "dev:backtester": "pnpm --filter @app/backtester dev",
