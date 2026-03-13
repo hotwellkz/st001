@@ -36,29 +36,32 @@ pnpm dev:backtester
 pnpm --filter @app/web dev
 ```
 
-### Engine — paper mode (E2E с Firestore)
+### Engine — paper mode (кратко)
 
-1. Скопируйте `.env.example` → `.env`.
-2. **Только память (klines с Binance, без записи в БД):**  
-   `ENGINE_PERSISTENCE=memory` (по умолчанию). Ключи Binance не нужны для свечей.
-3. **Paper + Firestore (рекомендуется для многодневного прогона):**
-   - Сервисный аккаунт Firebase/GCP, JSON ключ.
-   - В `.env`:  
-     `GOOGLE_APPLICATION_CREDENTIALS=/abs/path/to/service-account.json`  
-     `ENGINE_PERSISTENCE=firestore`  
-     `ENGINE_INSTANCE_ID=local-1`  
-     `GCP_PROJECT_ID=<id проекта>` (опционально, для логов)
-   - В Firestore создаются коллекции: `engineState`, `idempotencyKeys`, `orders`, `fills`, `positions`, `logs`.
-4. Запуск:
+1. `.env` из `.env.example`; `ENGINE_TRADING_MODE=paper`, `LIVE_TRADING_ENABLED=false`.
+2. **Memory:** `ENGINE_PERSISTENCE=memory` — klines с Binance, без Firestore.
+3. **Firestore (многодневный paper):** см. **[docs/FIRESTORE-PAPER.md](./docs/FIRESTORE-PAPER.md)** — коллекции, индекс `fills (userId, symbol)`, SA, `emergencyHalt`.
+4. Запуск одной командой после сборки:
 
 ```bash
-pnpm --filter @pkg/config build && pnpm --filter @pkg/binance build && pnpm --filter @pkg/storage build && pnpm --filter @app/engine build
+pnpm build   # или отдельно engine-пакеты
 ENGINE_PERSISTENCE=memory pnpm dev:engine
-# или с Firestore:
-# ENGINE_PERSISTENCE=firestore GOOGLE_APPLICATION_CREDENTIALS=... ENGINE_INSTANCE_ID=local-1 pnpm dev:engine
 ```
 
-По умолчанию: `ENGINE_TRADING_MODE=paper`, `LIVE_TRADING_ENABLED=false` — live не включать без чеклиста.
+Firestore:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/abs/path/sa.json
+export ENGINE_PERSISTENCE=firestore
+export ENGINE_INSTANCE_ID=paper-1
+pnpm dev:engine
+```
+
+**Проверка рестарта (ручная):** открыть paper-позицию → остановить engine → снова запустить с тем же `ENGINE_USER_ID` / `ENGINE_INSTANCE_ID` → в логах восстановление позиции; в Firestore у позиции должны быть `stopPriceQuote`, `clientOrderIdOpen`.
+
+**Останов без рестарта:** в `engineState/{ENGINE_INSTANCE_ID}` выставить `emergencyHalt: true` (Console или API). Снять — `false`.
+
+**Перед 3–7 днями:** один инстанс на `ENGINE_INSTANCE_ID`; индекс fills; Telegram для reconciliation; мониторинг логов «cycle slow»; отдельный Firebase-проект под paper.
 
 ## Тесты
 

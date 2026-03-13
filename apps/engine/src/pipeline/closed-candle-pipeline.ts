@@ -29,6 +29,8 @@ export interface PipelineDeps {
   constraints: ExchangeOrderConstraints;
   idempotencyTryReserve: (key: string) => Promise<boolean>;
   idempotencyComplete: (key: string) => Promise<void>;
+  /** После открытия long — точный стоп в Firestore (paper). */
+  persistStopPrice?: (symbol: string, stopPrice: number) => Promise<void>;
   config?: StrategyMvpConfig;
   onOpen?: (symbol: string, qty: number, price: number) => void;
   onClose?: (symbol: string, reason: string) => void;
@@ -129,6 +131,7 @@ export async function processSymbolClosedBar(params: {
     stopPrice: risk.stopPrice,
     clientOrderIdOpen: clientOrderId,
   });
+  await deps.persistStopPrice?.(symbol, risk.stopPrice);
   deps.onOpen?.(symbol, risk.qty, lastClosed.close);
   await deps.idempotencyComplete(idemKey);
   await deps.barStore.markProcessed(symbol, lastClosed.closeTime);

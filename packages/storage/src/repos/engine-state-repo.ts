@@ -10,6 +10,9 @@ export class EngineStateRepository {
     return this.db.collection(COLLECTIONS.engineState).doc(instanceId);
   }
 
+  /**
+   * Захват лидера только если lease истёк. Записывает leaderHolderId.
+   */
   async tryAcquireLeader(instanceId: string, holderId: string, leaseMs: number): Promise<boolean> {
     const ref = this.docRef(instanceId);
     const now = Date.now();
@@ -24,6 +27,7 @@ export class EngineStateRepository {
         {
           instanceId,
           leaderLeaseUntil: leaseUntil,
+          leaderHolderId: holderId,
           updatedAt: FieldValue.serverTimestamp(),
         } as Record<string, unknown>,
         { merge: true }
@@ -35,6 +39,15 @@ export class EngineStateRepository {
   async get(instanceId: string): Promise<EngineStateDoc | null> {
     const s = await this.docRef(instanceId).get();
     return s.exists ? (s.data() as EngineStateDoc) : null;
+  }
+
+  /** Актуален ли lease и совпадает ли держатель. */
+  async isStillLeader(instanceId: string, holderId: string): Promise<boolean> {
+    const doc = await this.get(instanceId);
+    if (!doc?.leaderLeaseUntil) return false;
+    const now = Date.now();
+    if (doc.leaderLeaseUntil.toMillis() <= now) return false;
+    return doc.leaderHolderId === holderId;
   }
 
   async setLastBarCloseTime(instanceId: string, symbol: string, closeTime: number): Promise<void> {
@@ -54,14 +67,26 @@ export class EngineStateRepository {
     );
   }
 
-  async renewLeader(instanceId: string, leaseMs: number): Promise<void> {
+  /**
+   * Продление только если мы всё ещё leaderHolderId (вторая реплика не перезапишет чужой lease).
+   */
+  async renewLeaderIfHolder(instanceId: string, holderId: string, leaseMs: number): Promise<boolean> {
+    const ref = this.docRef(instanceId);
     const leaseUntil = Timestamp.fromMillis(Date.now() + leaseMs);
-    await this.docRef(instanceId).set(
-      {
-        leaderLeaseUntil: leaseUntil,
-        updatedAt: FieldValue.serverTimestamp(),
-      } as Record<string, unknown>,
-      { merge: true }
-    );
+    return this.db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.data() as EngineStateDoc | undefined;
+      if (data?.leaderHolderId !== holderId) return false;
+      tx.set(
+        ref,
+        {
+          leaderLeaseUntil: leaseUntil,
+          leaderHolderId: holderId,
+          updatedAt: FieldValue.serverTimestamp(),
+        } as Record<string, unknown>,
+        { merge: true }
+      );
+      return true;
+    });
   }
 }

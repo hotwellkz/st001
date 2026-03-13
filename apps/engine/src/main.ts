@@ -23,6 +23,7 @@ import { persistPaperPlaceOrder } from "./persistence/paper-firestore.js";
 const env = loadEngineEnv();
 const log = createLogger({ name: "engine", level: env.LOG_LEVEL });
 const instanceId = env.ENGINE_INSTANCE_ID ?? "default";
+const holderId = `${instanceId}-${String(process.pid)}-${String(Math.random()).slice(2, 8)}`;
 
 const universe = new StaticUniverseService(
   (process.env["ENGINE_UNIVERSE"] ?? "BTCUSDT,ETHUSDT").split(",").map((s) => s.trim())
@@ -34,11 +35,11 @@ async function bootstrap(): Promise<{
   broker: PaperBroker | InstanceType<typeof LiveBrokerStub>;
   idempotencyTryReserve: (key: string) => Promise<boolean>;
   idempotencyComplete: (key: string) => Promise<void>;
-  storeEmergencyHalt: boolean;
   fillsRepo: FillsRepository | undefined;
   renewLeader: (() => Promise<void>) | undefined;
   leaderAcquired: boolean;
   engineState: EngineStateRepository | undefined;
+  positionsRepo: PositionsRepository | undefined;
 }> {
   const positions = new PositionManager();
 
@@ -56,11 +57,11 @@ async function bootstrap(): Promise<{
         return true;
       },
       idempotencyComplete: async () => {},
-      storeEmergencyHalt: false,
       fillsRepo: undefined,
       renewLeader: undefined,
       leaderAcquired: true,
       engineState: undefined,
+      positionsRepo: undefined,
     };
   }
 
@@ -72,21 +73,18 @@ async function bootstrap(): Promise<{
   const positionsRepo = new PositionsRepository(db);
   const logsRepo = new LogsRepository(db);
 
-  const holderId = `${instanceId}-${String(process.pid)}`;
   const acquired = await engineState.tryAcquireLeader(instanceId, holderId, env.ENGINE_LEADER_LEASE_MS);
   if (!acquired) {
     log.warn(
       { instanceId },
-      "leader lease held — engine idle (no bar/idempotency/order writes); поднимите один инстанс или дождитесь истечения lease"
+      "leader lease held — idle (no writes). Один инстанс на ENGINE_INSTANCE_ID или дождитесь lease."
     );
   }
 
   const renewLeader = async () => {
-    if (acquired) await engineState.renewLeader(instanceId, env.ENGINE_LEADER_LEASE_MS);
+    const ok = await engineState.renewLeaderIfHolder(instanceId, holderId, env.ENGINE_LEADER_LEASE_MS);
+    if (!ok) log.warn({ instanceId }, "leader renew skipped (not holder — possible failover)");
   };
-
-  const stateDoc = await engineState.get(instanceId);
-  const storeEmergencyHaltFirestore = stateDoc?.emergencyHalt === true;
 
   const barStore = new FirestoreBarProcessedStore(instanceId, engineState);
   await barStore.hydrateFromEngineState();
@@ -109,6 +107,8 @@ async function bootstrap(): Promise<{
   for (const row of open) {
     const qty = Number(row.quantity);
     const avg = Number(row.avgEntryPrice ?? 0);
+    const stop = Number(row.stopPriceQuote);
+    const stopPrice = Number.isFinite(stop) && stop > 0 ? stop : avg * 0.97;
     broker.setLastPrice(row.symbol, avg || 1);
     const cid = row.clientOrderIdOpen;
     if (cid) {
@@ -125,7 +125,7 @@ async function bootstrap(): Promise<{
       symbol: row.symbol,
       qty,
       avgEntry: avg,
-      stopPrice: avg * 0.97,
+      stopPrice,
     };
     if (cid !== undefined) openPayload.clientOrderIdOpen = cid;
     positions.openLong(openPayload);
@@ -137,15 +137,15 @@ async function bootstrap(): Promise<{
     broker,
     idempotencyTryReserve: (key) => idemRepo.tryReserve(key, { instanceId }),
     idempotencyComplete: (key) => idemRepo.complete(key),
-    storeEmergencyHalt: storeEmergencyHaltFirestore,
     fillsRepo,
     renewLeader: acquired ? renewLeader : undefined,
     leaderAcquired: acquired,
     engineState,
+    positionsRepo: acquired ? positionsRepo : undefined,
   };
 }
 
-let timer: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let leaderTimer: ReturnType<typeof setInterval> | null = null;
 
 async function mainAsync(): Promise<void> {
@@ -167,15 +167,33 @@ async function mainAsync(): Promise<void> {
         })
       : null;
 
+  const persistStopPrice =
+    ctx.positionsRepo && ctx.leaderAcquired
+      ? async (symbol: string, stopPrice: number) => {
+          await ctx.positionsRepo!.upsert(env.ENGINE_USER_ID, symbol, {
+            userId: env.ENGINE_USER_ID,
+            symbol,
+            stopPriceQuote: String(stopPrice),
+            source: "paper",
+          });
+        }
+      : undefined;
+
   async function tick(): Promise<void> {
-    if (env.ENGINE_PERSISTENCE === "firestore" && !ctx.leaderAcquired) return;
-    if (ctx.engineState) {
-      const doc = await ctx.engineState.get(instanceId);
+    if (env.ENGINE_PERSISTENCE === "firestore") {
+      if (!ctx.leaderAcquired) return;
+      const still = await ctx.engineState!.isStillLeader(instanceId, holderId);
+      if (!still) {
+        log.warn("lost leader lease — halting cycles (restart or wait lease)");
+        return;
+      }
+      const doc = await ctx.engineState!.get(instanceId);
       if (doc?.emergencyHalt === true) {
-        log.warn("emergency halt: engineState");
+        log.warn("emergency halt: engineState.emergencyHalt");
         return;
       }
     }
+
     await runEngineCycle({
       env,
       log,
@@ -194,16 +212,26 @@ async function mainAsync(): Promise<void> {
       maxQty: 9000,
       minNotional: 5,
       userId: env.ENGINE_USER_ID,
+      ...(persistStopPrice != null ? { persistStopPrice } : {}),
       ...(ctx.fillsRepo != null ? { fillsRepo: ctx.fillsRepo } : {}),
     });
+  }
+
+  function schedulePoll(): void {
+    const base = env.ENGINE_POLL_INTERVAL_MS;
+    const jitter = base * env.ENGINE_POLL_JITTER_FRAC * (Math.random() * 2 - 1);
+    const ms = Math.max(30_000, Math.round(base + jitter));
+    pollTimer = setTimeout(() => {
+      void tick().finally(schedulePoll);
+    }, ms);
   }
 
   log.info(
     {
       instanceId,
-      mode: env.ENGINE_TRADING_MODE,
-      liveEnabled: env.LIVE_TRADING_ENABLED,
       persistence: env.ENGINE_PERSISTENCE,
+      pollMs: env.ENGINE_POLL_INTERVAL_MS,
+      leaderLeaseMs: env.ENGINE_LEADER_LEASE_MS,
     },
     "engine runner started"
   );
@@ -212,13 +240,16 @@ async function mainAsync(): Promise<void> {
     leaderTimer = setInterval(() => void ctx.renewLeader!(), env.ENGINE_LEADER_RENEW_MS);
   }
 
-  void tick();
-  timer = setInterval(() => void tick(), env.ENGINE_POLL_INTERVAL_MS);
+  if (env.ENGINE_PERSISTENCE === "firestore" && !ctx.leaderAcquired) {
+    log.warn("non-leader: no polls");
+  } else {
+    void tick().finally(schedulePoll);
+  }
 
   registerGracefulShutdown(
     [
       () => {
-        if (timer) clearInterval(timer);
+        if (pollTimer) clearTimeout(pollTimer);
         if (leaderTimer) clearInterval(leaderTimer);
         log.info("engine draining");
       },

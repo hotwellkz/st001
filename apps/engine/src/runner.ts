@@ -41,6 +41,7 @@ export interface RunnerContext {
   /** Для сверки позиции с суммой BUY fills по символу (paper). */
   fillsRepo?: FillsRepository;
   userId?: string;
+  persistStopPrice?: (symbol: string, stopPrice: number) => Promise<void>;
 }
 
 function createKlinesClient(env: EngineEnv): BinanceRestClient {
@@ -64,8 +65,10 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
   });
   if (halt) return;
 
+  const t0 = Date.now();
   const symbols = await ctx.universe.refresh();
   const rest = createKlinesClient(ctx.env);
+  let klinesRequests = 0;
   ctx.log.debug("klines client ready (public or signed)");
 
   const cfg = defaultStrategyMvpConfig();
@@ -85,6 +88,7 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
     },
     idempotencyTryReserve: ctx.idempotencyTryReserve,
     idempotencyComplete: ctx.idempotencyComplete,
+    ...(ctx.persistStopPrice != null ? { persistStopPrice: ctx.persistStopPrice } : {}),
     onOpen: (symbol, qty, price) => {
       void alertTelegram(
         ctx.telegram,
@@ -105,6 +109,7 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
 
   for (const symbol of symbols) {
     try {
+      klinesRequests += 1;
       const rows = await rest.getKlines(symbol, "4h", { limit: 250 });
       if (rows.length < minBarsRequired(cfg)) continue;
       const now = Date.now();
@@ -137,6 +142,17 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
   }
 
   await runReconciliationPass(ctx);
+
+  const elapsed = Date.now() - t0;
+  const interval = ctx.env.ENGINE_POLL_INTERVAL_MS;
+  if (elapsed > interval * 0.85) {
+    ctx.log.warn(
+      { elapsedMs: elapsed, intervalMs: interval, klinesRequests, symbols: symbols.length },
+      "cycle slow vs poll interval — rate-limit risk; raise ENGINE_POLL_INTERVAL_MS or shrink universe"
+    );
+  } else {
+    ctx.log.debug({ elapsedMs: elapsed, klinesRequests }, "cycle timing");
+  }
 }
 
 async function runReconciliationPass(ctx: RunnerContext): Promise<void> {
@@ -150,6 +166,12 @@ async function runReconciliationPass(ctx: RunnerContext): Promise<void> {
         { symbol: sym, clientOrderId: pos.clientOrderIdOpen },
         "reconcile: broker has no order (restart seed missing?) — skip broker compare"
       );
+      await alertTelegram(
+        ctx.telegram,
+        ctx.log,
+        "reconciliation_mismatch",
+        `${sym} broker_order_missing ${pos.clientOrderIdOpen}`
+      );
     } else {
       const rec = await reconcileOrderVsBroker({
         symbol: sym,
@@ -158,7 +180,15 @@ async function runReconciliationPass(ctx: RunnerContext): Promise<void> {
         broker: ctx.broker,
         log: ctx.log,
       });
-      if (!rec.ok) ctx.log.warn({ symbol: sym, mismatches: rec.mismatches }, "reconcile order");
+      if (!rec.ok) {
+        ctx.log.warn({ symbol: sym, mismatches: rec.mismatches }, "reconcile order");
+        await alertTelegram(
+          ctx.telegram,
+          ctx.log,
+          "reconciliation_mismatch",
+          `${sym} order ${rec.mismatches.join("; ")}`
+        );
+      }
     }
 
     if (ctx.fillsRepo) {
@@ -169,7 +199,15 @@ async function runReconciliationPass(ctx: RunnerContext): Promise<void> {
         fillsQtySum: net,
         log: ctx.log,
       });
-      if (!posRec.ok) ctx.log.warn({ symbol: sym, mismatches: posRec.mismatches }, "reconcile position");
+      if (!posRec.ok) {
+        ctx.log.warn({ symbol: sym, mismatches: posRec.mismatches }, "reconcile position");
+        await alertTelegram(
+          ctx.telegram,
+          ctx.log,
+          "reconciliation_mismatch",
+          `${sym} position ${posRec.mismatches.join("; ")}`
+        );
+      }
     }
   }
 }

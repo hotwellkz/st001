@@ -42,14 +42,17 @@ export class FillsRepository {
     await this.upsertFill(id, doc);
   }
 
-  /** Сумма BUY минус SELL по символу (paper reconciliation). */
+  /** Сумма BUY − SELL по символу. Нужен composite index: fills — userId + symbol. */
   async netFilledQty(userId: string, symbol: string): Promise<number> {
-    const snap = await this.db.collection(COLLECTIONS.fills).where("userId", "==", userId).get();
+    const snap = await this.db
+      .collection(COLLECTIONS.fills)
+      .where("userId", "==", userId)
+      .where("symbol", "==", symbol)
+      .get();
     let buy = 0;
     let sell = 0;
     for (const d of snap.docs) {
       const f = d.data() as FillDoc;
-      if (f.symbol !== symbol) continue;
       const q = Number(f.qty);
       if (f.isBuyer) buy += q;
       else sell += q;

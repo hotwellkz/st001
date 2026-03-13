@@ -81,6 +81,8 @@ export interface PositionDoc {
   symbol: string;
   quantity: string;
   avgEntryPrice?: string;
+  /** Точный стоп для восстановления после рестарта (paper). */
+  stopPriceQuote?: string;
   /** Последний открывающий ордер (paper recovery + reconcile). */
   clientOrderIdOpen?: string;
   updatedAt: Timestamp;
@@ -90,6 +92,8 @@ export interface PositionDoc {
 export interface EngineStateDoc {
   instanceId: string;
   leaderLeaseUntil: Timestamp;
+  /** Кто держит lease (PID+instance); renew только при совпадении. */
+  leaderHolderId?: string;
   /** Последний обработанный closeTime по символу — восстановление после рестарта */
   lastBarCloseTime?: Record<string, number>;
   lastUserStreamEventTime?: Timestamp;

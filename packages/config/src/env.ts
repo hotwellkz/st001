@@ -29,13 +29,23 @@ const engineEnvSchema = baseEnvSchema.extend({
     .string()
     .default("false")
     .transform((v) => v === "true" || v === "1"),
-  ENGINE_POLL_INTERVAL_MS: z.coerce.number().default(60_000),
+  ENGINE_POLL_INTERVAL_MS: z.coerce.number().min(30_000).default(120_000),
+  /** Доля jitter к интервалу (0–0.5), снижает синхронные запросы к Binance */
+  ENGINE_POLL_JITTER_FRAC: z.coerce.number().min(0).max(0.5).default(0.08),
   ENGINE_USER_ID: z.string().default("system"),
   /** memory | firestore — paper E2E: firestore + GOOGLE_APPLICATION_CREDENTIALS */
   ENGINE_PERSISTENCE: z.enum(["memory", "firestore"]).default("memory"),
-  ENGINE_LEADER_LEASE_MS: z.coerce.number().min(10_000).default(120_000),
-  /** Интервал продления лидер-лиза (должен быть < ENGINE_LEADER_LEASE_MS) */
-  ENGINE_LEADER_RENEW_MS: z.coerce.number().min(5_000).default(60_000),
+  ENGINE_LEADER_LEASE_MS: z.coerce.number().min(20_000).default(90_000),
+  /** Продление чаще половины lease — иначе риск истечения между тиками */
+  ENGINE_LEADER_RENEW_MS: z.coerce.number().min(10_000).default(30_000),
+}).superRefine((data, ctx) => {
+  if (data.ENGINE_LEADER_RENEW_MS >= data.ENGINE_LEADER_LEASE_MS * 0.5) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "ENGINE_LEADER_RENEW_MS must be < 50% of ENGINE_LEADER_LEASE_MS",
+      path: ["ENGINE_LEADER_RENEW_MS"],
+    });
+  }
 });
 
 export type BaseEnv = z.infer<typeof baseEnvSchema>;
