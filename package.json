@@ -10,7 +10,7 @@
     "build": "pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config --filter @pkg/binance --filter @pkg/storage --filter @pkg/notifications --filter @pkg/risk --filter @pkg/strategy run build && pnpm --filter @app/api --filter @app/engine --filter @app/backtester run build",
     "build:web": "pnpm --filter @app/web run build",
     "dev:api": "pnpm --filter @app/api dev",
-    "dev:engine": "node --env-file=.env --import tsx apps/engine/src/main.ts",
+    "dev:engine": "sh -c 'cd apps/engine && node --env-file=../../.env --import tsx src/main.ts'",
     "dev:backtester": "pnpm --filter @app/backtester dev",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
