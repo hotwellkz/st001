@@ -1,5 +1,10 @@
 # Firestore — paper engine
 
+## Перед bootstrap
+
+1. **Firebase Console** → проект **strategydenisa** → **Build → Firestore** → **Create database** (режим Production или Test, регион). Это включает API и создаёт БД.
+2. При ошибке `SERVICE_DISABLED` / Firestore API: [включить API](https://console.developers.google.com/apis/api/firestore.googleapis.com/overview?project=strategydenisa).
+
 ## Сервисный аккаунт (минимальные права)
 
 - Отдельный SA **только для engine** (не общий admin).
@@ -21,13 +26,30 @@
 
 ## Индексы (обязательно для reconciliation)
 
-1. **fills** — composite:
-   - Поля: `userId` (Ascending), `symbol` (Ascending)
-   - Query: `where('userId','==',…).where('symbol','==',…)` в `netFilledQty`
+В репозитории уже описаны в **`firestore.indexes.json`** (коллекция **fills**: `userId` + `symbol`).
 
-Создание: Firebase Console → Firestore → Indexes → Composite, или ссылка из ошибки в логах при первом запуске.
+Деплой (из корня, Firebase CLI залогинен в нужный проект):
 
-2. **positions** — single-field `userId` (часто уже есть) для `listOpenPaperPositions`.
+```bash
+firebase use strategydenisa   # или ваш project id
+pnpm run firestore:indexes
+```
+
+Либо вручную: Console → Firestore → Indexes → Composite → collection `fills`, поля `userId` Asc, `symbol` Asc.
+
+## Bootstrap коллекций / engineState
+
+Коллекции появятся сами при первой записи engine. Чтобы сразу был документ `engineState` и тестовый лог:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/abs/path/sa.json
+export ENGINE_INSTANCE_ID=strategydenisa-paper-1   # как в .env
+pnpm --filter @pkg/storage run firestore:bootstrap
+```
+
+Затем **`pnpm run firestore:indexes`** и дождаться статуса индекса **Enabled** (1–5 минут).
+
+Операционные чеклисты: **[PAPER-RUN-OPERATIONS.md](./PAPER-RUN-OPERATIONS.md)**.
 
 ## Аварийный стоп без рестарта
 

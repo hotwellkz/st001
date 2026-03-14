@@ -10,14 +10,16 @@
     "build": "pnpm --filter @pkg/shared --filter @pkg/logger --filter @pkg/config --filter @pkg/binance --filter @pkg/storage --filter @pkg/notifications --filter @pkg/risk --filter @pkg/strategy run build && pnpm --filter @app/api --filter @app/engine --filter @app/backtester run build",
     "build:web": "pnpm --filter @app/web run build",
     "dev:api": "pnpm --filter @app/api dev",
-    "dev:engine": "pnpm --filter @app/engine dev",
+    "dev:engine": "node --env-file=.env --import tsx apps/engine/src/main.ts",
     "dev:backtester": "pnpm --filter @app/backtester dev",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "test": "pnpm --filter @pkg/binance test && pnpm --filter @pkg/storage test && pnpm --filter @pkg/strategy test && pnpm --filter @pkg/testing test && pnpm --filter @app/engine test && pnpm --filter @app/backtester test",
-    "test:quick": "pnpm --filter @pkg/testing run test"
+    "test:quick": "pnpm --filter @pkg/testing run test",
+    "firestore:indexes": "firebase deploy --only firestore:indexes",
+    "firestore:bootstrap": "pnpm --filter @pkg/storage run firestore:bootstrap"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",

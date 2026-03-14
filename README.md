@@ -36,32 +36,22 @@ pnpm dev:backtester
 pnpm --filter @app/web dev
 ```
 
-### Engine — paper mode (кратко)
+### Engine — paper mode
 
-1. `.env` из `.env.example`; `ENGINE_TRADING_MODE=paper`, `LIVE_TRADING_ENABLED=false`.
-2. **Memory:** `ENGINE_PERSISTENCE=memory` — klines с Binance, без Firestore.
-3. **Firestore (многодневный paper):** см. **[docs/FIRESTORE-PAPER.md](./docs/FIRESTORE-PAPER.md)** — коллекции, индекс `fills (userId, symbol)`, SA, `emergencyHalt`.
-4. Запуск одной командой после сборки:
+Полный чеклист: **[docs/PAPER-RUN-OPERATIONS.md](./docs/PAPER-RUN-OPERATIONS.md)** (Firestore, env, restart/halt, логи, «не запускать 24h пока…»).  
+Firestore детали: **[docs/FIRESTORE-PAPER.md](./docs/FIRESTORE-PAPER.md)**.
 
-```bash
-pnpm build   # или отдельно engine-пакеты
-ENGINE_PERSISTENCE=memory pnpm dev:engine
-```
-
-Firestore:
+1. Скопировать `.env.example` → `.env`, заполнить (см. операции doc).
+2. **Сборка и запуск из корня** (подхватывается **`.env`** через `--env-file`):
 
 ```bash
-export GOOGLE_APPLICATION_CREDENTIALS=/abs/path/sa.json
-export ENGINE_PERSISTENCE=firestore
-export ENGINE_INSTANCE_ID=paper-1
+pnpm install
+pnpm build
 pnpm dev:engine
 ```
 
-**Проверка рестарта (ручная):** открыть paper-позицию → остановить engine → снова запустить с тем же `ENGINE_USER_ID` / `ENGINE_INSTANCE_ID` → в логах восстановление позиции; в Firestore у позиции должны быть `stopPriceQuote`, `clientOrderIdOpen`.
-
-**Останов без рестарта:** в `engineState/{ENGINE_INSTANCE_ID}` выставить `emergencyHalt: true` (Console или API). Снять — `false`.
-
-**Перед 3–7 днями:** один инстанс на `ENGINE_INSTANCE_ID`; индекс fills; Telegram для reconciliation; мониторинг логов «cycle slow»; отдельный Firebase-проект под paper.
+3. **Только память (без Firestore):** в `.env` поставить `ENGINE_PERSISTENCE=memory` — тогда `GOOGLE_APPLICATION_CREDENTIALS` не обязателен.
+4. **Firestore:** в `.env` — `ENGINE_PERSISTENCE=firestore`, `GOOGLE_APPLICATION_CREDENTIALS`, `ENGINE_INSTANCE_ID`; индексы: `pnpm run firestore:indexes`; bootstrap: `pnpm run firestore:bootstrap`.
 
 ## Тесты
 
