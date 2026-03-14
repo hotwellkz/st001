@@ -14,6 +14,17 @@ cp .env.example .env   # при необходимости поправьте PO
 pnpm install
 ```
 
+### Paper engine — один раз для новичка
+
+1. Откройте **Terminal** (macOS).
+2. Перейдите в папку проекта: `cd путь/к/st`
+3. Один раз: `cp .env.example .env`, откройте `.env` и укажите путь к JSON-ключу в **GOOGLE_APPLICATION_CREDENTIALS**, выставьте **ENGINE_PERSISTENCE=firestore** (или `memory` без ключа).
+4. Сборка: `pnpm build`
+5. Проверка: `pnpm run paper:check`
+6. Запуск: **`pnpm run paper:start`** — это paper-only (live не включается). Остановка: **Ctrl+C**.
+
+Дополнительно: `pnpm run paper:bootstrap` — только сброс lease Firestore. Подробности: [docs/PAPER-RUN-OPERATIONS.md](./docs/PAPER-RUN-OPERATIONS.md).
+
 ## Сборка
 
 ```bash
@@ -36,22 +47,18 @@ pnpm dev:backtester
 pnpm --filter @app/web dev
 ```
 
-### Engine — paper mode
+### Engine — paper mode (ручной запуск)
 
-Полный чеклист: **[docs/PAPER-RUN-OPERATIONS.md](./docs/PAPER-RUN-OPERATIONS.md)** (Firestore, env, restart/halt, логи, «не запускать 24h пока…»).  
-Firestore детали: **[docs/FIRESTORE-PAPER.md](./docs/FIRESTORE-PAPER.md)**.
+Предпочтительно для всех: **`pnpm run paper:start`** (см. блок «для новичка» выше).  
+Ниже — низкоуровневые команды при необходимости.
 
-1. Скопировать `.env.example` → `.env`, заполнить (см. операции doc).
-2. **Сборка и запуск из корня** (подхватывается **`.env`** через `--env-file`):
+Полный чеклист: **[docs/PAPER-RUN-OPERATIONS.md](./docs/PAPER-RUN-OPERATIONS.md)**. Firestore: **[docs/FIRESTORE-PAPER.md](./docs/FIRESTORE-PAPER.md)**.
 
 ```bash
-pnpm install
-pnpm build
-pnpm dev:engine
+pnpm install && pnpm build && pnpm dev:engine
 ```
 
-3. **Только память (без Firestore):** в `.env` поставить `ENGINE_PERSISTENCE=memory` — тогда `GOOGLE_APPLICATION_CREDENTIALS` не обязателен.
-4. **Firestore:** в `.env` — `ENGINE_PERSISTENCE=firestore`, `GOOGLE_APPLICATION_CREDENTIALS`, `ENGINE_INSTANCE_ID`; индексы: `pnpm run firestore:indexes`; bootstrap: `pnpm run firestore:bootstrap`.
+**Memory:** `ENGINE_PERSISTENCE=memory` в `.env`. **Firestore:** ключ + `ENGINE_PERSISTENCE=firestore`; индексы: `pnpm run firestore:indexes`.
 
 ## Тесты
 

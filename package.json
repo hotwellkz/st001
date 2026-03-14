@@ -19,7 +19,11 @@
     "test": "pnpm --filter @pkg/binance test && pnpm --filter @pkg/storage test && pnpm --filter @pkg/strategy test && pnpm --filter @pkg/testing test && pnpm --filter @app/engine test && pnpm --filter @app/backtester test",
     "test:quick": "pnpm --filter @pkg/testing run test",
     "firestore:indexes": "firebase deploy --only firestore:indexes",
-    "firestore:bootstrap": "pnpm --filter @pkg/storage run firestore:bootstrap"
+    "firestore:bootstrap": "pnpm --filter @pkg/storage run firestore:bootstrap",
+    "paper:check": "bash scripts/paper-check.sh",
+    "paper:bootstrap": "bash scripts/paper-bootstrap.sh",
+    "paper:start": "bash scripts/paper-start.sh",
+    "paper:restart": "bash scripts/paper-start.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
