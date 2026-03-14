@@ -39,11 +39,20 @@ LOG_LEVEL=debug ENGINE_POLL_INTERVAL_MS=120000 node --env-file=../../.env --impo
 
 Проверка индекса: `pnpm --filter @pkg/storage exec tsx scripts/verify-firestore-paper.ts`
 
+## Restart-test (проверка lease)
+
+1. `pnpm run paper:bootstrap` → `pnpm run paper:start` → корректный старт (leader).
+2. Остановить процесс. **Без** bootstrap снова: `cd apps/engine && ENGINE_PERSISTENCE=firestore node --env-file=../../.env --import tsx src/main.ts` → ожидаемо `leader lease held` + `non-leader: no polls` (~90s, пока жив старый lease).
+3. Снова `paper:bootstrap` + `paper:start` → снова leader. `paper:start` всегда делает bootstrap при Firestore — для «второго инстанса без сброса» запускайте engine вручную без bootstrap.
+
 ## Halt-test (процесс запущен)
 
 1. Console → `engineState/{INSTANCE_ID}` → `emergencyHalt` = **true**
 2. В логах на следующем тике: `emergency halt: engineState.emergencyHalt`
-3. `emergencyHalt` = **false** → циклы снова идут
+3. `emergencyHalt` = **false** → циклы снова идут (на `info` отдельной строки «resume» нет — смотрите отсутствие повторяющегося `emergency halt` и снова debug/cycle).
+4. CLI (из корня, GAC + INSTANCE_ID в `.env`):  
+   `cd packages/storage && pnpm exec tsx scripts/set-engine-halt.ts true` / `false`  
+5. **Poll ≥ 30000 ms** (zod); для быстрого halt-теста можно `ENGINE_POLL_INTERVAL_MS=30000`.
 
 ## Ограничение среды
 
