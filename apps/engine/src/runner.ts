@@ -42,6 +42,8 @@ export interface RunnerContext {
   fillsRepo?: FillsRepository;
   userId?: string;
   persistStopPrice?: (symbol: string, stopPrice: number) => Promise<void>;
+  /** Firestore audit rows for bar-close validation (leader + firestore only). */
+  persistAuditLog?: (message: string, context: Record<string, unknown>) => Promise<void>;
 }
 
 function createKlinesClient(env: EngineEnv): BinanceRestClient {
@@ -89,6 +91,7 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
     idempotencyTryReserve: ctx.idempotencyTryReserve,
     idempotencyComplete: ctx.idempotencyComplete,
     ...(ctx.persistStopPrice != null ? { persistStopPrice: ctx.persistStopPrice } : {}),
+    ...(ctx.persistAuditLog != null ? { persistAuditLog: ctx.persistAuditLog } : {}),
     onOpen: (symbol, qty, price) => {
       void alertTelegram(
         ctx.telegram,
@@ -107,27 +110,72 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
     },
   };
 
+  const now = Date.now();
+  let anyClosedBar = false;
+  let anyOpenBarOnly = false;
   for (const symbol of symbols) {
     try {
       klinesRequests += 1;
       const rows = await rest.getKlines(symbol, "4h", { limit: 250 });
       if (rows.length < minBarsRequired(cfg)) continue;
-      const now = Date.now();
-      const candles = rows.map((row, idx) =>
-        klineRowToCandle(row, row[6] < now || idx < rows.length - 1)
+      // Binance returns ascending by open time; LAST element is the current (still-forming) candle.
+      // We need the last CLOSED bar: last row where closeTime (row[6]) < now.
+      let lastClosedIdx = -1;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const row = rows[i];
+        if (row && Number(row[6]) < now) {
+          lastClosedIdx = i;
+          break;
+        }
+      }
+      if (lastClosedIdx < 0) {
+        anyOpenBarOnly = true;
+        const lastRow = rows[rows.length - 1];
+        ctx.log.debug(
+          {
+            symbol,
+            lastRowOpenTime: lastRow?.[0],
+            lastRowCloseTime: lastRow?.[6],
+            now,
+            reason: "no closed bar in response",
+          },
+          "4h kline: last row is forming candle — skip"
+        );
+        continue;
+      }
+      const candlesAll = rows.map((row, idx) =>
+        klineRowToCandle(row, Number(row[6]) < now || idx < rows.length - 1)
       );
-      const last = candles[candles.length - 1];
-      if (!last?.isClosed) continue;
+      const lastClosedCandle = candlesAll[lastClosedIdx];
+      if (!lastClosedCandle) continue;
+      const candles = candlesAll.slice(0, lastClosedIdx + 1);
+      ctx.log.info(
+        {
+          symbol,
+          lastClosedCloseTime: lastClosedCandle.closeTime,
+          lastClosedClose: lastClosedCandle.close,
+          now,
+          lastClosedIdx,
+          arrayLastCloseTime: candlesAll[candlesAll.length - 1]?.closeTime,
+        },
+        "closed_4h_bar_detected — running pipeline (using last closed bar, not array tail)"
+      );
+      anyClosedBar = true;
+      await ctx.persistAuditLog?.("closed_4h_bar_detected", {
+        symbol,
+        closeTime: lastClosedCandle.closeTime,
+        close: lastClosedCandle.close,
+      });
       if ("setLastPrice" in ctx.broker && typeof ctx.broker.setLastPrice === "function") {
         (ctx.broker as { setLastPrice: (s: string, p: number) => void }).setLastPrice(
           symbol,
-          last.close
+          lastClosedCandle.close
         );
       }
       await processSymbolClosedBar({
         symbol,
         candles,
-        lastClosed: last,
+        lastClosed: lastClosedCandle,
         deps,
       });
     } catch (e) {
@@ -139,6 +187,13 @@ export async function runEngineCycle(ctx: RunnerContext): Promise<void> {
         String(e instanceof Error ? e.message : e)
       );
     }
+  }
+
+  if (symbols.length > 0 && !anyClosedBar && anyOpenBarOnly) {
+    ctx.log.info(
+      { symbols: symbols.length },
+      "cycle_summary — no closed 4h bar this tick (last row is forming candle; lastBarCloseTime unchanged)"
+    );
   }
 
   await runReconciliationPass(ctx);

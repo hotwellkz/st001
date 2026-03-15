@@ -40,6 +40,7 @@ async function bootstrap(): Promise<{
   leaderAcquired: boolean;
   engineState: EngineStateRepository | undefined;
   positionsRepo: PositionsRepository | undefined;
+  logsRepo: LogsRepository | undefined;
 }> {
   const positions = new PositionManager();
 
@@ -62,6 +63,7 @@ async function bootstrap(): Promise<{
       leaderAcquired: true,
       engineState: undefined,
       positionsRepo: undefined,
+      logsRepo: undefined,
     };
   }
 
@@ -142,6 +144,7 @@ async function bootstrap(): Promise<{
     leaderAcquired: acquired,
     engineState,
     positionsRepo: acquired ? positionsRepo : undefined,
+    logsRepo: acquired ? logsRepo : undefined,
   };
 }
 
@@ -176,6 +179,22 @@ async function mainAsync(): Promise<void> {
             stopPriceQuote: String(stopPrice),
             source: "paper",
           });
+        }
+      : undefined;
+
+  const persistAuditLog =
+    ctx.logsRepo && ctx.leaderAcquired && env.ENGINE_PERSISTENCE === "firestore"
+      ? async (message: string, context: Record<string, unknown>) => {
+          try {
+            await ctx.logsRepo!.append({
+              level: "info",
+              service: "engine",
+              message,
+              contextJson: JSON.stringify(context),
+            });
+          } catch (e) {
+            log.warn({ err: e, message }, "persistAuditLog failed");
+          }
         }
       : undefined;
 
@@ -214,6 +233,7 @@ async function mainAsync(): Promise<void> {
       userId: env.ENGINE_USER_ID,
       ...(persistStopPrice != null ? { persistStopPrice } : {}),
       ...(ctx.fillsRepo != null ? { fillsRepo: ctx.fillsRepo } : {}),
+      ...(persistAuditLog != null ? { persistAuditLog } : {}),
     });
   }
 

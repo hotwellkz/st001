@@ -34,6 +34,8 @@ export interface PipelineDeps {
   config?: StrategyMvpConfig;
   onOpen?: (symbol: string, qty: number, price: number) => void;
   onClose?: (symbol: string, reason: string) => void;
+  /** Firestore + stdout visibility for bar-close validation (optional). */
+  persistAuditLog?: (message: string, context: Record<string, unknown>) => Promise<void>;
 }
 
 export async function processSymbolClosedBar(params: {
@@ -52,12 +54,25 @@ export async function processSymbolClosedBar(params: {
 
   const lastProcessed = await deps.barStore.getLastCloseTime(symbol);
   if (lastProcessed !== undefined && lastProcessed >= lastClosed.closeTime) {
-    deps.log.debug({ symbol, closeTime: lastClosed.closeTime }, "duplicate bar skip");
+    deps.log.info({ symbol, closeTime: lastClosed.closeTime }, "bar_pipeline_duplicate_skip (already processed)");
+    await deps.persistAuditLog?.("bar_pipeline_duplicate_skip", {
+      symbol,
+      closeTime: lastClosed.closeTime,
+    });
     return;
   }
 
   if (candles.length < minBarsRequired(cfg)) {
     await deps.barStore.markProcessed(symbol, lastClosed.closeTime);
+    deps.log.info(
+      { symbol, closeTime: lastClosed.closeTime, reason: "min_bars" },
+      "bar_processed — lastBarCloseTime updated (warmup/min bars only)"
+    );
+    await deps.persistAuditLog?.("bar_processed", {
+      symbol,
+      closeTime: lastClosed.closeTime,
+      outcome: "min_bars_warmup",
+    });
     return;
   }
 
@@ -68,30 +83,53 @@ export async function processSymbolClosedBar(params: {
     const ex = evaluateExitLongAtIndex({ candles, config: cfg }, i, pos.avgEntry, pos.stopPrice);
     if (ex.exit) {
       const reason = ex.reason === "stop" ? "stop_loss" : "exit_signal";
+      const cid = generateClientOrderId("exit");
+      deps.log.info({ symbol, reason, clientOrderId: cid }, "paper_exit_placed (closed bar)");
       await deps.broker.placeOrder({
         symbol,
         side: "SELL",
         quantity: String(pos.qty),
-        clientOrderId: generateClientOrderId("exit"),
+        clientOrderId: cid,
         type: "MARKET",
       });
       deps.positions.close(symbol);
       deps.onClose?.(symbol, reason);
+      await deps.persistAuditLog?.("paper_exit_placed", { symbol, reason, clientOrderId: cid });
+    } else {
+      deps.log.info({ symbol }, "strategy_evaluated — hold long, no exit on this bar");
+      await deps.persistAuditLog?.("strategy_hold_long", { symbol, closeTime: lastClosed.closeTime });
     }
     await deps.barStore.markProcessed(symbol, lastClosed.closeTime);
+    await deps.persistAuditLog?.("bar_processed", {
+      symbol,
+      closeTime: lastClosed.closeTime,
+      outcome: ex.exit ? "after_exit" : "holding",
+    });
     return;
   }
 
   const entry = evaluateEntryAtIndex({ candles, config: cfg }, i);
   if (!entry.entry) {
+    deps.log.info({ symbol, closeTime: lastClosed.closeTime }, "strategy_evaluated — no entry signal");
     await deps.barStore.markProcessed(symbol, lastClosed.closeTime);
+    await deps.persistAuditLog?.("bar_processed", {
+      symbol,
+      closeTime: lastClosed.closeTime,
+      outcome: "no_entry_signal",
+    });
     return;
   }
 
   const idemKey = entryOrderIdempotencyKey(symbol, lastClosed.closeTime);
   const reserved = await deps.idempotencyTryReserve(idemKey);
   if (!reserved) {
+    deps.log.info({ symbol, idemKey }, "bar_processed — idempotency skip (already reserved)");
     await deps.barStore.markProcessed(symbol, lastClosed.closeTime);
+    await deps.persistAuditLog?.("bar_processed", {
+      symbol,
+      closeTime: lastClosed.closeTime,
+      outcome: "idempotency_skip",
+    });
     return;
   }
 
@@ -110,12 +148,26 @@ export async function processSymbolClosedBar(params: {
   });
 
   if (!risk.ok) {
+    deps.log.info(
+      { symbol, reason: risk.reason },
+      "strategy_entry_signal — risk rejected, no paper order"
+    );
     await deps.idempotencyComplete(idemKey);
     await deps.barStore.markProcessed(symbol, lastClosed.closeTime);
+    await deps.persistAuditLog?.("bar_processed", {
+      symbol,
+      closeTime: lastClosed.closeTime,
+      outcome: "risk_rejected",
+      riskReason: risk.reason,
+    });
     return;
   }
 
   const clientOrderId = generateClientOrderId("entry");
+  deps.log.info(
+    { symbol, clientOrderId, qty: risk.qty, price: lastClosed.close },
+    "paper_entry_placed (closed bar)"
+  );
   await deps.broker.placeOrder({
     symbol,
     side: "BUY",
@@ -135,4 +187,10 @@ export async function processSymbolClosedBar(params: {
   deps.onOpen?.(symbol, risk.qty, lastClosed.close);
   await deps.idempotencyComplete(idemKey);
   await deps.barStore.markProcessed(symbol, lastClosed.closeTime);
+  await deps.persistAuditLog?.("bar_processed", {
+    symbol,
+    closeTime: lastClosed.closeTime,
+    outcome: "paper_entry_placed",
+    clientOrderId,
+  });
 }
