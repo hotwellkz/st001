@@ -9,6 +9,8 @@
 cd apps/engine && pnpm exec tsx scripts/validate-4h-klines-closed.ts
 ```
 
+**После короткого прогона через paper:start:** в аудите возможны `closed_4h_bar_detected` и `bar_processed` при пустом `lastBarCloseTime` в engineState (задержка репликации или порядок чтения). Наличие записей в Firestore logs по bar_processed подтверждает, что пайплайн и `markProcessed` вызываются.
+
 ## Почему `lastBarCloseTime` мог оставаться пустым (до фикса)
 
 Пока **последняя** свеча в ответе Binance по интервалу **4h** ещё **формируется**, у неё `closeTime > now` → в runner бар помечается как **не закрытый** → пайплайн **не вызывается** → `markProcessed` / Firestore **не обновляются**. Окно в несколько часов может целиком лежать **внутри одного открытого 4h-бара**.

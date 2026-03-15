@@ -45,8 +45,12 @@ export GOOGLE_APPLICATION_CREDENTIALS="$GAC"
 export ENGINE_INSTANCE_ID="$IID"
 
 if [[ "$PERSIST" == "firestore" ]]; then
-  echo "→ Сброс lease Firestore (можно запускать снова без ожидания)…"
-  pnpm run firestore:bootstrap 2>/dev/null || pnpm --filter @pkg/storage run firestore:bootstrap
+  if [[ "${SKIP_BOOTSTRAP:-0}" != "1" && "${SKIP_BOOTSTRAP:-}" != "true" ]]; then
+    echo "→ Сброс lease Firestore (можно запускать снова без ожидания)…"
+    pnpm run firestore:bootstrap 2>/dev/null || pnpm --filter @pkg/storage run firestore:bootstrap
+  else
+    echo "→ SKIP_BOOTSTRAP=1: не сбрасываем lease (перезапуск без сброса состояния)"
+  fi
 fi
 
 echo "→ Запуск paper engine (только paper, live выключен)…"

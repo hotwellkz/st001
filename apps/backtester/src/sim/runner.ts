@@ -26,6 +26,12 @@ export interface TradeRecord {
   fee: number;
   pnlQuote?: number;
   rMultiple?: number;
+  /** Close time (ms) of the bar on which fill occurred (for by-year / exposure). */
+  fillCloseTimeMs?: number;
+  /** Exit reason for SELL: stop_loss | exit_signal */
+  exitReason?: string;
+  /** Entry cost (quote) for SELL round-trip pnl% */
+  entryNotional?: number;
 }
 
 export interface EquityPoint {
@@ -100,6 +106,9 @@ export function runAlignedBacktest(params: {
             fee: exitFee,
             pnlQuote,
             rMultiple: r,
+            fillCloseTimeMs: next.closeTime,
+            exitReason: ex.reason === "stop" ? "stop_loss" : "exit_signal",
+            entryNotional: pos.avgEntry * pos.qty,
           });
         }
         continue;
@@ -167,6 +176,7 @@ export function runAlignedBacktest(params: {
         fillPrice: fillPx,
         qty,
         fee: notional * sim.feeRateTaker,
+        fillCloseTimeMs: next.closeTime,
       });
     }
 

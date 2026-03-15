@@ -6,3 +6,7 @@ secrets/
 *.log
 coverage
 .DS_Store
+backtest-data/
+backtest-out/
+_audit-out/
+*.tsbuildinfo

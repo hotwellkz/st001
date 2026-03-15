@@ -51,6 +51,9 @@ importers:
 
   apps/backtester:
     dependencies:
+      '@pkg/binance':
+        specifier: workspace:*
+        version: link:../../packages/binance
       '@pkg/config':
         specifier: workspace:*
         version: link:../../packages/config

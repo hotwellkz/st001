@@ -1,5 +1,7 @@
 # Backtester — архитектура и честность
 
+**Исторический бэктест и команды:** см. [BACKTEST-HISTORICAL.md](./BACKTEST-HISTORICAL.md).
+
 ## Архитектура
 
 1. **Исторические свечи** — `HistoricalCandleSource`: по символу массив `Candle` по времени (только закрытые).
