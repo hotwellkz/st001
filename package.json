@@ -23,6 +23,7 @@
     "paper:check": "bash scripts/paper-check.sh",
     "paper:bootstrap": "bash scripts/paper-bootstrap.sh",
     "paper:start": "bash scripts/paper-start.sh",
+    "paper:start:4sym": "bash -c 'ENGINE_UNIVERSE=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT bash scripts/paper-start.sh'",
     "paper:start:no-bootstrap": "bash -c 'SKIP_BOOTSTRAP=1 bash scripts/paper-start.sh'",
     "paper:audit": "bash scripts/paper-audit.sh",
     "paper:supervised": "bash scripts/supervised-paper-5-6h.sh",

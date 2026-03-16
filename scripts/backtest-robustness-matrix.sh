@@ -6,11 +6,16 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_BASE="${1:-backtest-out}"
+SYMBOLS="${2:-}"
 cd "$ROOT"
 
 run() {
+  local out="$1"
+  shift
+  local extra=()
+  [ -n "$SYMBOLS" ] && extra=(--symbols "$SYMBOLS")
   pnpm --filter @app/backtester exec node --import tsx src/cli.ts \
-    --data-dir backtest-data --out "$1" "${@:2}" 2>&1 | grep -E "Return %|MaxDD|Trades:|Sharpe" || true
+    --data-dir backtest-data --out "$out" "${extra[@]}" "$@" 2>&1 | grep -E "Return %|MaxDD|Trades:|Sharpe" || true
 }
 
 echo "=== Baseline (10 bps fee, 5 bps slip) ==="

@@ -1,12 +1,13 @@
 # Paper engine — команды для оператора
 
-Краткая шпаргалка: как запускать, останавливать и проверять paper engine (Firestore).
+Краткая шпаргалка: как запускать, останавливать и проверять paper engine (Firestore). Подтверждённый baseline по 4 символам и операторский стандарт: **`docs/BASELINE-4SYMBOLS-OPERATOR.md`**.
 
 ## Основные команды
 
 | Команда | Назначение |
 |--------|------------|
-| **`pnpm run paper:start`** | Запуск движка без ограничения по времени. Работает до ручной остановки (Ctrl+C). При каждом запуске сбрасывает lease и lastBarCloseTime (bootstrap). |
+| **`pnpm run paper:start`** | Запуск движка без ограничения по времени. Универсум по умолчанию: из .env `ENGINE_UNIVERSE` или BTCUSDT,ETHUSDT. Работает до ручной остановки (Ctrl+C). При каждом запуске сбрасывает lease и lastBarCloseTime (bootstrap). |
+| **`pnpm run paper:start:4sym`** | То же, но универсум жёстко задан под подтверждённый baseline: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT (без правки .env). |
 | **`pnpm run paper:bootstrap`** | Только сброс состояния Firestore (lease, lastBarCloseTime). Запускайте отдельно, когда нужен «чистый» старт перед paper:start. |
 | **`pnpm run paper:audit`** | Аудит после прогона: engineState, logs, orders/fills/positions, счётчики bar-событий. Берёт .env автоматически. |
 | **`pnpm run paper:supervised`** | Запуск с таймером (по умолчанию 6 ч), затем автоостановка и аудит. Для тестовых прогонов. |
@@ -59,3 +60,8 @@ DURATION_SEC=10800 pnpm run paper:supervised
 
 - В `.env`: `LIVE_TRADING_ENABLED=false`, `ENGINE_TRADING_MODE=paper`, при `ENGINE_PERSISTENCE=firestore` — путь в `GOOGLE_APPLICATION_CREDENTIALS` и при необходимости `ENGINE_INSTANCE_ID`.
 - Проверка окружения: `pnpm run paper:check`.
+- Универсум: переменная `ENGINE_UNIVERSE` (например `BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT`). Если не задана — в коде движка по умолчанию `BTCUSDT,ETHUSDT`. Для работы по подтверждённому 4-символьному baseline используйте `paper:start:4sym` или задайте `ENGINE_UNIVERSE` в .env.
+
+## Исполнение и издержки
+
+В paper брокере ордера исполняются по last price без явной комиссии и проскальзывания. В историческом бэктесте учтены комиссия (10 bps baseline) и проскальзывание (5 bps). Реальные издержки будут снижать результат; при приближении к 20 bps fee / 20 bps slippage стратегия по исследованию заметно слабеет. Мониторинг фактических издержек и сравнение с бэктестом — в чек-листе в `docs/BASELINE-4SYMBOLS-OPERATOR.md`.
